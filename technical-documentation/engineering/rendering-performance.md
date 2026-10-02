@@ -354,6 +354,28 @@ All three in one afternoon, with the editor open in the background (~40 % of a c
 
 **Reading the GPU on this machine:** ACO's statistics come out only when a pipeline is compiled, and Mesa's disk cache skips compilation for a shader it has seen — set `MESA_SHADER_CACHE_DISABLE=true` or the shader you are measuring prints nothing. Per-pass timestamps read back synchronously every frame disturb the clocks and the overlap with decode; trust the span of a frame and repeated wall-clock runs over a single draw's number.
 
+### The same fix on Windows — 2026-10-03
+
+The same laptop under Windows 11 (26200): D3D11 on the Radeon iGPU, `h264_amf` encode, the same benchmark scenario, three builds in one session. Each ran from the app tree of its CI-built installer, side by side in one directory. 2.0.0-rc.13 is the build for the fix: its tag has the same `crates/`, `electron/`, `src/` and `scripts/` as `main` at `0624c148`, and its export path differs from rc.12's by `compositor_view.node` alone (the ffmpeg DLLs are hash-identical).
+
+| | 1.11.0-rc.1 | 2.0.0-rc.12 | 2.0.0-rc.13 (= `main`) |
+|---|---:|---:|---:|
+| benchmark median | 34.18 s ± 0.73 | 116.79 s ± 2.36 | 35.05 s ± 0.46 |
+| local `h264_amf` floor | 19.83 s | 24.42 s | 20.54 s |
+| × its local floor | 1.72 | 4.78 | 1.71 |
+| foreign load, export / floor | 88 % / 61 % | 154 % / 206 % | 72 % / 72 % |
+
+**The regression was worse here than on Linux**, 4.78× against 2.43×: the export ran at half real time. The fix takes it back to 1.11 exactly. rc.12's row ran under the heaviest foreign load of the three, and its floor spread from 20.8 to 30.4 s, which inflates its cost somewhat. Its raw seconds, 3.3× rc.13's, do not depend on the floor. The load came from a Claude client, FocuSee, Steam, Discord and Slack idling; there was no remote session (Parsec's last guest left on 2026-09-30). The benchmark's `calibration.json` was the M1's, the same for all three rows, so it moves nothing between them.
+
+**The pixels did not change.** rc.13's three scoring exports are byte-identical to rc.12's (md5 `e8ce4b86…`). Its warm-up export, the build's first run on the machine, differed in the first GOP only: 23–39 pixels off by ±2 in frames 1–29, gone at the next I-frame. A fresh copy of the build in a new directory exported `e8ce4b86…` straight away, so it did not reproduce. Twelve-second variants exported by both builds:
+
+- **Byte-identical:** the 3D cursor with click impact and the laptop frame with its shadow; the window frame (`sd_screen_under_bar`); a solid colour with Aurora.
+- **Different, invisibly:** a gradient with 70 % background blur, and an image with Waves, 40 % blur and the phone frame. Each build is deterministic on its own. Between them, PSNR is at least 76 and 67 dB, the differences are macroblock-shaped in the screen and camera content, and side-by-side crops cannot be told apart. The blurred background is now drawn once and copied, and a one-level difference upstream gets redistributed by the encoder's rate control.
+
+In the editor (a dev build of `main` with rc.13's native directory), the preview followed every change while the static background is cached: image → colour → colour → gradient → image, blur 100 → 0 → 50, and a window resize from 1508×794 to 1028×650. Aurora kept the background moving between two programme times (mean difference 3.47 on the border), while None left it unchanged (0.01).
+
+No register counts: Radeon GPU Analyzer was not run, so the VGPR explanation under fxc is inferred from the Linux measurement and from this outcome, not measured.
+
 ## How we got here — the WebCodecs trail
 
 > **This section is history.** It records the measurements that killed the browser-based export pipeline and motivated the native one. The code it describes is **gone**: `src/lib/exporter/videoExporter.ts`, `src/bench/runBench.ts` and the `npm run bench:export` script were deleted with the web MP4 pipeline. It is kept because it is the evidence for [why the compositor, not the encoder, was the wall](#the-wall-is-the-compositor) — which is the entire reason `crates/compositor/` exists — and because the [measurement hazards](#measurement-hazards) it uncovered still apply to any new benchmark here.
@@ -821,7 +843,7 @@ the bench runs on the reference machine.
 
 ## Known gaps
 
-- **The D3D11 and Metal layer shaders were split like the WGSL one without a measurement on either.** Whether an AMD or Intel iGPU under Windows paid the same occupancy for the models is unknown, and so is what the split buys there; the M1 showed no regression on 2.0, which says nothing about fxc's register allocation. [The Linux section](#the-linux-export-path--2026-10-02) has the method — the register counts first, then the export. The static-background cache (keyed by the shared `BackgroundKey`) and the scissored cursor-trail composite were ported to both, unmeasured as well.
+- **The Metal layer shader was split like the WGSL one without a measurement, and D3D11 only on an AMD iGPU.** On the Ryzen 5 7520U under Windows, the split, the static-background cache and the scissored trail together took the export from 4.78× to 1.71× its floor, level with 1.11.0-rc.1's 1.72×, with byte-identical pixels ([the Windows A/B](#the-same-fix-on-windows--2026-10-03)). Still owed: an Intel iGPU under Windows, fxc's register counts (Radeon GPU Analyzer, `ps_main` against `ps_main_models`), and an A/B on the M1, where the published figures are 1.04× for 1.11.0-rc.1 and 1.11× for 2.0.0-rc.12. [The Linux section](#the-linux-export-path--2026-10-02) has the method: register counts first, then the export.
 - **macOS export startup can cost 4 s, and nobody has reproduced it on demand.** Measured repeatedly at 4208–4502 ms between the CLI's `started` event and the first composed frame — 18 % of a 60 s export, 71 % of a 5 s one — then gone, on the same shipped binary, hours later (481 ms). It is not the compositor (init is 2.4 ms, runtime MSL compilation included), not the `<video>` metadata probes (13 ms and 6 ms), not the CLI prologue (24 ms total), and not the renderer entry point (measured at −0.1 %). It correlates with memory pressure on an 8 GiB machine — `387M unused / 2613M compressor` while it reproduced, `564M unused / 1837M compressor` after — which would fit faulting ~1.8 MB of module chunks out of a 274 MB `app.asar` while the compressor thrashes: seconds of wall clock, no CPU in either process, cost independent of the media. Untested. Recreating the pressure deliberately and watching it return is what would settle it, and then whether asar size is the lever.
 - **10-bit and HEVC decode on macOS are unmeasured.** The export's decode predicate is `codec_id == H264 && format == YUV420P`, so both keep VideoToolbox untested. HEVC is the case most likely to invert the result, since its software decoder is materially more expensive. 10-bit needs work beyond the predicate first: `mac_frames::CpuFrames` converts to 8-bit NV12, so routing 10-bit through the software path would silently truncate — the predicate is currently what prevents that.
 - **The macOS preview's decode backend has never been measured.** `DecodeIntent` splits preview from export precisely so the preview could keep the old arbitration; the export won on throughput, but the preview scrubs, where seek latency after `avcodec_flush_buffers` may matter more, and it shares the machine with the editor UI. Changing it without measuring it would be the same mistake the export change corrects.
