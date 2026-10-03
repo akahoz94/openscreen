@@ -286,11 +286,11 @@ describe("LayoutPane picture-in-picture camera", () => {
 		expect(stored()).toMatchObject({ webcamAnchor: "right" });
 	});
 
-	it("offers a camera from 15% to 50% of the frame", () => {
+	it("offers a camera from 15% to 60% of the frame", () => {
 		renderLayout(seedProject(true));
 		const slider = screen.getByRole("slider", { name: "Webcam size" });
 		expect(slider).toHaveAttribute("min", "15");
-		expect(slider).toHaveAttribute("max", "50");
+		expect(slider).toHaveAttribute("max", "60");
 	});
 });
 

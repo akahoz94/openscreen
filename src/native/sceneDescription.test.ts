@@ -1259,11 +1259,11 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(buildSceneDescription(doc).layout.webcamSize).toBeCloseTo(0.334, 5);
 	});
 
-	it("webcamSize clamps below 15 and above 50", () => {
+	it("webcamSize clamps below 15 and above 60", () => {
 		const low = makeDoc({ legacyEditor: { webcamSizePreset: 2 } });
 		const high = makeDoc({ legacyEditor: { webcamSizePreset: 90 } });
 		expect(buildSceneDescription(low).layout.webcamSize).toBeCloseTo(0.15, 5);
-		expect(buildSceneDescription(high).layout.webcamSize).toBeCloseTo(0.5, 5);
+		expect(buildSceneDescription(high).layout.webcamSize).toBeCloseTo(0.6, 5);
 	});
 
 	it("carries the camera's anchor, the point its zoom-time shrink keeps fixed", () => {

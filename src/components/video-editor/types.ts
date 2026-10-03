@@ -11,10 +11,10 @@ import { clamp01 } from "@/utils/math";
 export type { ZoomDepth, ZoomScaleInput };
 export type ZoomFocusMode = "manual" | "auto";
 export type { WebcamLayoutPreset };
-/** Webcam size as a percentage of the canvas reference dimension (15-50). */
+/** Webcam size as a percentage of the canvas reference dimension (15-60). */
 export type WebcamSizePreset = number;
 
-export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 25;
+export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 40;
 
 export const DEFAULT_WEBCAM_LAYOUT_PRESET: WebcamLayoutPreset = "picture-in-picture";
 
