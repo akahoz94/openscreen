@@ -257,6 +257,16 @@ a new clip). The mapping sits in
   It replaced a guess from the wall clock at 1× speed, which inside a 2× speed region
   re-seeked the view ten times a second; `useNativePlaybackSync` still makes that guess
   for an addon that reports no position.
+- **Free-run decodes every source frame.** Inside a speed region the render thread adopts
+  `speed ×` the source's frame rate, so the decoder sets the ceiling: 4K at 2× needs 60
+  decoded frames a second, at 4× 120. A clip without a camera used to decode its screen
+  file a second time for a stand-in webcam decoder, halving that budget; the stand-in is
+  now never stepped or sought, and compose takes the screen frame in its place
+  (`Player::webcam_frame` in `crates/compositor/src/live.rs`). On an M1, 4K at 2× went from
+  1.2 s of source behind on average in the editor to no lag the counter could measure, and
+  from 8 to 57 frames published a second in the bench.
+  `cargo run --release --example live_free_run_bench_macos -- <file> <speed>` replays the
+  loop and prints the lag.
 
 The overlay's rect is kept aligned with the DOM via the same primitives used
 elsewhere in the renderer:
@@ -356,6 +366,11 @@ was thrown away.
   path and not for the live view. Editing playback is therefore silent against
   the exported file; users hear audio only when the export runs. There is no
   flag in this branch that re-routes live audio.
+- **Speeds the decoder cannot follow fall behind.** VideoToolbox decodes 4K at about 97
+  frames a second on an M1, short of the 120 a 30 fps source needs at 4×. The render thread
+  caps a tick at `max_steps` frames and counts at most 0.1 s of clock per tick, so the view
+  loses time and the drift watch re-anchors it every 500 ms; skipping ahead to a keyframe
+  instead is not implemented.
 - **Drift under 150 ms is left alone.** The view and the app's clock run independently
   inside the drift watch's tolerance, and a correction is a seek, not a change of pace: a
   view drifting slowly is re-anchored with a visible step rather than eased back.
