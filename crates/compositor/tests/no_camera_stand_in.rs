@@ -1,12 +1,14 @@
 //! Sans caméra, la preview compose partout avec la frame écran à la place de la webcam : le
 //! décodeur remplaçant n'est plus ni avancé ni recherché (`live::open_webcam_or_stand_in`).
 //!
-//! Couvre les quatre chemins qui composent : le seek en pause (`present_frame`), y compris
-//! au-delà de la dernière image, la lecture libre (`step`), et la recomposition à l'arrêt
-//! (`recompose`). Une frame webcam nulle les ferait tous rendre `false`, preview figée.
+//! Couvre les chemins qui composent : le seek en pause (`present_frame`), y compris au-delà de
+//! la dernière image, la lecture libre (`step`), et la recomposition à l'arrêt (`recompose`).
+//! Une frame webcam nulle les ferait tous rendre `false`, preview figée. Vérifie aussi que le
+//! remplaçant ne bouge pas, `seek_active` compris : composer suffit à ne rien prouver, puisqu'il
+//! ouvre le même fichier valide que l'écran.
 //!
 //! La CI ne le joue pas : il faut un GPU et une source vidéo, sinon il se saute. N'importe quel
-//! MP4 d'au moins 3 s convient :
+//! MP4 d'au moins 4 s convient :
 //!
 //! ```sh
 //! OPENSCREEN_LIVE_SOURCE=/chemin/source.mp4 cargo test -p openscreen-compositor --test no_camera_stand_in -- --nocapture
@@ -59,15 +61,27 @@ fn every_compose_path_works_without_a_camera() {
         assert!(!player.webcam_decoder_is_real(), "pas de caméra déclarée : décodeur remplaçant");
         player.set_programme_clock(Some(&scene), 0);
 
+        let stand_in_time = player.webcam_time_sec();
+
         assert!(player.present_frame(&comp, &cfg, 1.0).expect("seek"), "seek en pause");
         let start = player.screen_time_sec();
 
-        // Lecture libre à 2× sur une seconde d'horloge, au pas de 1/60 s.
+        // Lecture libre à 2× sur une seconde d'horloge, au pas de 1/60 s. À l'EOF, `step`
+        // reboucle à 0 : la cible ne serait alors plus jamais atteinte, d'où l'arrêt sur un
+        // temps qui recule.
         let mut target = start;
         let mut composed = 0;
         for _ in 0..60 {
             target += 2.0 / 60.0;
-            while player.step(&comp, &cfg, target).expect("step") {
+            loop {
+                let before = player.screen_time_sec();
+                if !player.step(&comp, &cfg, target).expect("step") {
+                    break;
+                }
+                assert!(
+                    player.screen_time_sec() >= before,
+                    "la source a rebouclé avant {target:.2} s : il faut une source d'au moins 4 s"
+                );
                 composed += 1;
             }
         }
@@ -82,5 +96,14 @@ fn every_compose_path_works_without_a_camera() {
 
         // Au-delà de la dernière image : la dernière image, composée.
         assert!(player.present_frame(&comp, &cfg, 100_000.0).expect("seek fin"), "seek au-delà de la fin");
+
+        assert!(player.seek_active(0.5).expect("seek_active"), "seek_active");
+        assert!(player.step(&comp, &cfg, 0.5).expect("step après seek_active"), "step après seek_active");
+
+        assert_eq!(
+            player.webcam_time_sec().to_bits(),
+            stand_in_time.to_bits(),
+            "le décodeur remplaçant a bougé : il ne doit être ni avancé ni recherché"
+        );
     }
 }

@@ -463,6 +463,12 @@ impl Player {
         self.sdec.cur_time_sec()
     }
 
+    /// Temps source courant du décodeur webcam, le remplaçant compris : sans caméra il ne doit
+    /// jamais bouger (`tests/no_camera_stand_in.rs`).
+    pub unsafe fn webcam_time_sec(&self) -> f64 {
+        self.wdec.cur_time_sec()
+    }
+
     /// Recalcule l'horloge programme pour le clip `clip_index` de `scene` (la scène COMPLÈTE,
     /// pas la fenêtre d'un clip : il faut la durée de sortie des clips précédents).
     ///

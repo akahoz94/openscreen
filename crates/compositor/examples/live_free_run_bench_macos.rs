@@ -58,7 +58,9 @@ fn main() -> anyhow::Result<()> {
 		let mut player = Player::open(&path, "", &gpu)?;
 		player.set_programme_clock(Some(&scene), 0);
 		anyhow::ensure!(player.present_frame(&comp, &cfg, 0.0)?, "aucune frame à 0 s");
-		let start_source = player.screen_time_sec();
+		// Temps source réellement joué, cumulé frame par frame : un clip plus court que la mesure
+		// reboucle à 0 (EOF), et la seule position finale compterait alors une seule passe.
+		let mut played = 0.0f64;
 
 		let mut acc = 0.0f64;
 		let mut last = Instant::now();
@@ -84,6 +86,7 @@ fn main() -> anyhow::Result<()> {
 				stepped = true;
 				adopted += 1;
 				let after = player.screen_time_sec();
+				played += if after >= before { after - before } else { after };
 				acc = if after >= before { (acc - (after - before)).max(0.0) } else { 0.0 };
 				n += 1;
 				if n >= max_steps {
@@ -100,7 +103,6 @@ fn main() -> anyhow::Result<()> {
 			}
 		}
 		let wall = t0.elapsed().as_secs_f64();
-		let played = player.screen_time_sec() - start_source;
 		println!(
 			"vitesse {speed}x, {width}x{height}, {wall:.2} s : horloge {:.2} s source, vue {played:.2} s source, retard {:.2} s source ({:.2} s de lecture)",
 			clock_source,
