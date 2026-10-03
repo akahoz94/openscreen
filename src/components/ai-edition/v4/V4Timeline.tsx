@@ -11,7 +11,6 @@ import {
 	Pencil,
 	Scissors,
 	Sparkles,
-	SplitSquareHorizontal,
 	Trash2,
 	Wand2,
 	ZoomIn,
@@ -1534,7 +1533,7 @@ export function V4Timeline({
 			id: "cut",
 			label: t("buttons.addTrim"),
 			shortcut: formatBinding(shortcuts.addTrim, isMac),
-			icon: <SplitSquareHorizontal size={16} />,
+			icon: <Scissors size={16} />,
 		},
 		{
 			id: "comment",

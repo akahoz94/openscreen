@@ -39,14 +39,7 @@
  */
 
 import { translate } from "@docusaurus/Translate";
-import {
-	Clock,
-	Crosshair,
-	MessageSquare,
-	SplitSquareHorizontal,
-	Wand2,
-	ZoomIn,
-} from "lucide-react";
+import { Clock, Crosshair, MessageSquare, Scissors, Wand2, ZoomIn } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { attachDriver, SCENE_QUERIES } from "./driver";
@@ -471,7 +464,7 @@ export default function Recreation() {
 							<Wand2 size={30} />
 						</span>
 						<span className={styles.tool}>
-							<SplitSquareHorizontal size={30} />
+							<Scissors size={30} />
 						</span>
 						<span className={styles.tool}>
 							<Clock size={30} />
