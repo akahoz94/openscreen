@@ -109,9 +109,13 @@ struct PrefetchedClip {
 /// `should_draw_webcam`).
 ///
 /// ponytail: on garde le remplaçant plutôt que de passer `wdec` en `Option<Decoder>`, ce qui
-/// toucherait 22 sites dont le pool de décodeurs et la boucle de composition `unsafe`. À faire
-/// si quelqu'un mesure que le décodeur inutile coûte (VRAM des pools D3D11VA, une ouverture
-/// par clip) — l'avertissement ci-dessous dit enfin à quelle fréquence le cas visible arrive.
+/// toucherait 22 sites dont le pool de décodeurs et la boucle de composition `unsafe`. Il est
+/// ouvert mais n'est plus jamais avancé ni recherché : la composition reçoit la frame écran à
+/// sa place (`Player::webcam_frame`), l'image même qu'il aurait décodée. Le décoder à côté de
+/// l'écran coûtait la moitié du débit de décodage, sans caméra, c'est-à-dire le cas courant :
+/// une source 4K lue à 2× plafonnait à ~46 frames/s pour 97 que le décodeur seul tient, et la
+/// preview prenait des secondes de retard dans les régions de vitesse. Reste à faire si la
+/// VRAM des pools D3D11VA ou l'ouverture par clip se mesurent.
 unsafe fn open_webcam_or_stand_in(
     screen_path: &str,
     webcam_path: &str,
@@ -156,9 +160,8 @@ unsafe fn open_and_seek_clip(
     let mut sdec = Decoder::open(screen_path, gpu)?;
     let (mut wdec, webcam_decoder_is_real) = open_webcam_or_stand_in(screen_path, webcam_path, gpu)?;
     let sf = sdec.seek_to_or_last(source_time_sec)?;
-    let mut wf = wdec.seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?;
-    if wf.is_null() {
-        wf = wdec.seek_to(0.0)?;
+    if webcam_decoder_is_real && wdec.seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?.is_null() {
+        wdec.seek_to(0.0)?;
     }
     if sf.is_null() {
         anyhow::bail!("clip préchargé vide au temps source {source_time_sec:.3}s (screen=\"{screen_path}\")");
@@ -192,12 +195,17 @@ struct PooledClip {
 unsafe fn seek_pair(
     sdec: &mut Decoder,
     wdec: &mut Decoder,
+    webcam_decoder_is_real: bool,
     source_time_sec: f64,
     webcam_offset_sec: f64,
 ) -> Result<bool> {
     let sf = sdec.seek_to_or_last(source_time_sec)?;
     if sf.is_null() {
         return Ok(false);
+    }
+    // Le remplaçant n'est jamais lu (`Player::webcam_frame`) : rien à positionner.
+    if !webcam_decoder_is_real {
+        return Ok(true);
     }
     let mut wf = wdec.seek_to(webcam_seek_time(source_time_sec, webcam_offset_sec))?;
     if wf.is_null() {
@@ -237,7 +245,13 @@ unsafe fn swap_clip_pooled(
             let mut pooled = pool.remove(i);
             // Reseek les décodeurs poolés AVANT de les installer. Échec → on les jette et on
             // ouvre à neuf (chemin connu sûr), jamais une frame vide.
-            if seek_pair(&mut pooled.clip.sdec, &mut pooled.clip.wdec, t, request.webcam_offset_sec)? {
+            if seek_pair(
+                &mut pooled.clip.sdec,
+                &mut pooled.clip.wdec,
+                pooled.clip.webcam_decoder_is_real,
+                t,
+                request.webcam_offset_sec,
+            )? {
                 pooled.clip.idx = (t * pooled.clip.sdec.fps()).round().max(0.0) as u32;
                 hit = true;
                 pooled.clip
@@ -362,7 +376,13 @@ impl Player {
         // Les DEUX flux doivent avoir une frame : `compose_frame` les échantillonne tous les
         // deux sans condition, un seul manquant suffit à le faire échouer (d'où le `false` que
         // `seek_pair` peut rendre → l'appelant retombe sur l'ouverture complète).
-        if !seek_pair(&mut self.sdec, &mut self.wdec, source_time_sec, self.webcam_offset_sec)? {
+        if !seek_pair(
+            &mut self.sdec,
+            &mut self.wdec,
+            self.webcam_decoder_is_real,
+            source_time_sec,
+            self.webcam_offset_sec,
+        )? {
             return Ok(false);
         }
         self.idx = (source_time_sec * self.sdec.fps()).round().max(0.0) as u32;
@@ -422,6 +442,17 @@ impl Player {
     /// dispose, le chemin webcam du clip, ment dans le second cas (cf. `should_draw_webcam`).
     pub fn webcam_decoder_is_real(&self) -> bool {
         self.webcam_decoder_is_real
+    }
+
+    /// La frame webcam à composer avec la frame écran `screen` : celle de la caméra, ou sans
+    /// caméra la frame écran elle-même, que le remplaçant aurait décodée à l'identique et que
+    /// la composition ne dessine pas (`should_draw_webcam`).
+    unsafe fn webcam_frame(&self, screen: *mut crate::ffi::AVFrame) -> *mut crate::ffi::AVFrame {
+        if self.webcam_decoder_is_real {
+            self.wdec.cur_frame()
+        } else {
+            screen
+        }
     }
 
     /// Temps source courant du décodeur écran — utilisé par `render_thread` pour détecter le
@@ -512,7 +543,10 @@ impl Player {
         }
 
         let target_webcam_t = (self.sdec.cur_time_sec() - self.webcam_offset_sec).max(0.0);
-        let wf = if use_current {
+        let wf = if !self.webcam_decoder_is_real {
+            // Pas de caméra : le remplaçant n'est pas décodé (cf. `open_webcam_or_stand_in`).
+            sf
+        } else if use_current {
             self.wdec.cur_frame()
         } else {
             let cur = self.wdec.cur_frame();
@@ -585,7 +619,7 @@ impl Player {
             return Ok(false);
         }
         let sf = self.sdec.cur_frame();
-        let wf = self.wdec.cur_frame();
+        let wf = self.webcam_frame(sf);
         if sf.is_null() || wf.is_null() {
             return Ok(false);
         }
@@ -602,11 +636,14 @@ impl Player {
     /// `set_time`, incorrect au-delà de 6s sur un enregistrement réel).
     pub unsafe fn present_frame(&mut self, comp: &Compositor, cfg: &Cfg, target_sec: f64) -> Result<bool> {
         let sf = self.sdec.seek_to_or_last(target_sec)?;
-        // La webcam aussi : sans caméra, `wdec` rouvre le fichier écran, et une cible au-delà de
-        // sa dernière image laisserait la frame sans webcam, donc non composée.
-        let wf = self
-            .wdec
-            .seek_to_or_last(webcam_seek_time(target_sec, self.webcam_offset_sec))?;
+        // La caméra aussi, au-delà de sa dernière image comprise : sans frame webcam, la frame
+        // ne serait pas composée. Sans caméra, la frame écran tient sa place.
+        let wf = if self.webcam_decoder_is_real {
+            self.wdec
+                .seek_to_or_last(webcam_seek_time(target_sec, self.webcam_offset_sec))?
+        } else {
+            sf
+        };
         if sf.is_null() || wf.is_null() {
             self.has_current_frame = false;
             return Ok(false);
