@@ -72,6 +72,10 @@ result-*
 # Auto-caption model + ORT wasm — regenerated at build by scripts/fetch-caption-model.mjs
 /caption-assets/
 
+# Third-party licence texts, regenerated before every package by
+# scripts/generate-third-party-licenses.mjs (`npm run licenses:generate`).
+/build-licenses/
+
 # Native STT artifacts — whisper-stt-server binaries + ggml backend sidecars.
 /electron/native/bin/
 /electron/native/models/

@@ -126,6 +126,14 @@
       "from": "THIRD-PARTY-NOTICES.md",
       "to": "THIRD-PARTY-NOTICES.md"
     },
+    // The full licence texts of the npm packages Vite bundles and of the crates compiled into
+    // the compositor addon. Generated, not committed: every build:* script and build.yml's
+    // macOS job run `npm run licenses:generate` first. electron-builder only warns about a
+    // missing source here, so scripts/before-pack.cjs is what refuses to package without it.
+    {
+      "from": "build-licenses/THIRD-PARTY-LICENSES.txt",
+      "to": "THIRD-PARTY-LICENSES.txt"
+    },
     {
       "from": "LICENSE",
       "to": "LICENSE"
