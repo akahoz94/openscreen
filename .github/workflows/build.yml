@@ -378,6 +378,13 @@ jobs:
       - name: Stage ONNX Runtime
         run: npm run fetch:onnxruntime
 
+      # Fourth step spelled out for the same reason: `build:mac`, `build:win` and
+      # `build:linux` chain it before electron-builder. It writes the licence texts of the
+      # bundled npm packages and of the crates in the addon; scripts/before-pack.cjs
+      # refuses to package without them.
+      - name: Generate third-party licences
+        run: npm run licenses:generate
+
       - name: Package .app bundle
         run: npx electron-builder --mac --${{ matrix.arch }} --dir --publish never
         env:

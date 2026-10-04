@@ -5,8 +5,9 @@ bundle the third-party components below. This file ships inside the
 application resources and satisfies the attribution and source-offer obligations
 that come with them.
 
-npm dependencies are not listed here: they are resolved from `package.json` and
-distributed by their own registries, not redistributed inside our binaries.
+npm dependencies are not listed here. Their code ships bundled inside the
+application by Vite, and their licence texts are in `THIRD-PARTY-LICENSES.txt`,
+generated at build time and shipped beside this file.
 
 ---
 
@@ -182,6 +183,8 @@ distributed by their own registries, not redistributed inside our binaries.
 - **Licenses**: as each crate publishes them on crates.io. Where a crate offers a
   choice, OpenScreen uses it under MIT or Apache-2.0. Each crate's licence text is
   in its source package at the version listed.
+- **Full texts**: the licence and NOTICE files of every crate compiled into the
+  addon are in `THIRD-PARTY-LICENSES.txt`, shipped beside this file.
 - **MIT OR Apache-2.0** (155): android_system_properties 0.1.5, anyhow 1.0.103,
   arrayvec 0.7.8, ash 0.38.0+1.3.281, autocfg 1.5.1, bit-set 0.8.0, bit-vec 0.8.0,
   bitflags 1.3.2, bitflags 2.13.1, bumpalo 3.20.3, cc 1.2.67, cexpr 0.6.0, cfg-if

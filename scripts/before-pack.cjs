@@ -1112,7 +1112,26 @@ function checkCompositorAddonFreshness(
 	);
 }
 
+// electron-builder.json5 ships this as resources/THIRD-PARTY-LICENSES.txt, but for a missing
+// extraResources source electron-builder only logs "file source doesn't exist" and packages
+// without it. A packaging path that skipped `npm run licenses:generate` would ship an installer
+// with no licence texts for the code it bundles, silently. The generator itself never fails over
+// a missing licence file or cargo, so only absence is refused here.
+const THIRD_PARTY_LICENSES = path.join(ROOT, "build-licenses", "THIRD-PARTY-LICENSES.txt");
+
+function checkThirdPartyLicenses() {
+	if (!fs.existsSync(THIRD_PARTY_LICENSES)) {
+		throw new Error(
+			"Refusing to package without the third-party licence texts.\n\n" +
+				`  expected: ${THIRD_PARTY_LICENSES}\n\n` +
+				"Generate them with:\n\n    npm run licenses:generate\n\n" +
+				"or use the build:<platform> script, which does that for you.",
+		);
+	}
+}
+
 exports.default = async function beforePack(context) {
+	checkThirdPartyLicenses();
 	const platform = context?.electronPlatformName ?? process.platform;
 	if (platform === "win32") {
 		// The copy that ships is the arch-tagged one under electron/native/bin/
@@ -1162,6 +1181,7 @@ exports.default = async function beforePack(context) {
 // Runnable on its own for debugging: `node scripts/before-pack.cjs`
 if (require.main === module) {
 	try {
+		checkThirdPartyLicenses();
 		if (process.platform === "darwin") {
 			checkMacNativePayload({ arch: undefined });
 			const tag = `darwin-${process.arch}`;
