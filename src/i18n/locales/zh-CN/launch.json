@@ -1,20 +1,20 @@
 {
 	"tooltips": {
-		"hideHUD": "隐藏控制面板",
-		"hideHUDTip": "隐藏控制面板。可从托盘图标重新显示。",
-		"closeApp": "关闭应用",
-		"restartRecording": "删除此录制并重新开始",
-		"cancelRecording": "停止并删除此录制",
+		"hideHUD": "隐藏录制栏",
+		"hideHUDTip": "隐藏录制栏，可通过系统托盘图标重新显示",
+		"closeApp": "退出 OpenScreen",
+		"restartRecording": "删除本次录制并重新开始",
+		"cancelRecording": "停止录制并删除本次录制内容",
 		"pauseRecording": "暂停录制",
 		"resumeRecording": "继续录制",
-		"useVerticalTray": "使用竖向托盘",
-		"useHorizontalTray": "使用横向托盘",
+		"useVerticalTray": "切换为竖向录制栏",
+		"useHorizontalTray": "切换为横向录制栏",
 		"changeSource": "选择其他屏幕或窗口",
 		"systemAudio": "系统音频：录制电脑播放的声音",
 		"microphone": "麦克风：录制语音",
-		"camera": "摄像头：录制为单独图层，可在编辑器中移动",
-		"openStudio": "打开工作室：录制内容的编辑器",
-		"openNotes": "打开笔记：录制时阅读的文字",
+		"camera": "摄像头：单独录制摄像头画面，可在编辑器中调整位置",
+		"openStudio": "打开工作室，编辑录制内容",
+		"openNotes": "打开笔记，查看录制时需要阅读的文字",
 		"openNotesPlaceholder": "在此输入笔记...",
 		"notesToolbar": {
 			"bold": "加粗",
@@ -33,7 +33,7 @@
 			"decreaseFontSize": "减小字体",
 			"increaseFontSize": "增大字体",
 			"mirror": "水平镜像",
-			"mirrorTip": "水平翻转文字，以便在镜子中阅读"
+			"mirrorTip": "左右翻转文字，便于通过镜面阅读"
 		}
 	},
 	"audio": {
@@ -54,8 +54,8 @@
 	},
 	"cursor": {
 		"name": "可编辑光标",
-		"editableTip": "可编辑光标：单独录制，可在编辑器中修改样式并使用自动缩放",
-		"systemTip": "系统光标：真实光标，直接录进视频。无法修改样式，没有自动缩放。"
+		"editableTip": "可编辑光标：单独记录光标，可在编辑器中修改样式并使用自动缩放",
+		"systemTip": "系统光标：直接录入视频，无法修改样式或使用自动缩放"
 	},
 	"sourceSelector": {
 		"loading": "正在加载源...",
@@ -67,10 +67,10 @@
 		"defaultSourceName": "屏幕"
 	},
 	"recording": {
-		"selectSource": "请选择要录制的源",
-		"systemPicker": "系统将询问要共享的内容",
+		"selectSource": "选择要录制的屏幕或窗口",
+		"systemPicker": "系统将提示你选择要共享的内容",
 		"start": "开始录制",
-		"stop": "停止并保存录制",
+		"stop": "停止录制并保存",
 		"saving": "正在保存..."
 	},
 	"language": "语言",
@@ -91,7 +91,7 @@
 		"title": "设备设置",
 		"close": "关闭",
 		"micLevel": "输入音量",
-		"micHint": "说话以测试麦克风",
+		"micHint": "说话试试，检查麦克风是否正常",
 		"noMicrophones": "未找到麦克风",
 		"preview": "预览",
 		"previewUnavailable": "预览不可用",
