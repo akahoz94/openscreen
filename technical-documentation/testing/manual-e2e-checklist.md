@@ -518,7 +518,8 @@ The agent may only call the fixed tool set in [ai-agent.md](../architecture/ai-a
 - [ ] Confirm the edit produced by that auto-enhance request can be rewound like any other turn.
 - [ ] Choose *Smart cuts* with no provider connected and confirm the setup view appears instead of a failed send.
 - [ ] Choose *Automatic zooms* and confirm it adds zooms without involving the provider.
-- [ ] Restart the app and confirm conversations are gone while the provider configuration persists; this is a known gap, not a defect to file.
+- [ ] Restart the app, reopen the project, and confirm its conversations come back with their titles and messages while the provider configuration persists; rewind controls on messages sent before the restart are hidden, which is a known gap, not a defect to file.
+- [ ] Delete a project from the open-project dialog and confirm its `<projectId>.chat.json` is gone from `userData/projects`.
 - [ ] Confirm the provider API key is never displayed in the settings form after it is saved.
 
 ## Native compositor preview and export — v1.8.0
