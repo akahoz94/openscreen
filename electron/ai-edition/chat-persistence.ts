@@ -3,19 +3,11 @@
 // must never stop the project itself from opening.
 
 import { randomUUID } from "node:crypto";
-import {
-	closeSync,
-	existsSync,
-	fsyncSync,
-	mkdirSync,
-	openSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import { renameWithRetry } from "./document-service";
 
 const toolCallSchema = z.object({ name: z.string(), summary: z.string() });
 const messageSchema = z.object({
@@ -47,6 +39,9 @@ const fileSchema = z.object({
 export type StoredChatSession = z.infer<typeof sessionSchema>;
 
 export class ChatPersistence {
+	/** Tail of the pending write/delete chain per project id — see `enqueue`. */
+	private readonly queues = new Map<string, Promise<void>>();
+
 	constructor(private readonly projectsRoot: string) {}
 
 	fileFor(projectId: string): string {
@@ -79,29 +74,51 @@ export class ChatPersistence {
 		}
 	}
 
-	write(projectId: string, sessions: StoredChatSession[]): void {
+	/** Snapshots `sessions` now; the disk write waits its turn in the project's queue. */
+	async write(projectId: string, sessions: StoredChatSession[]): Promise<void> {
 		const destination = this.fileFor(projectId);
-		mkdirSync(this.projectsRoot, { recursive: true });
-		const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;
 		// Explicitly choose fields; provider configuration and API keys never enter
 		// the chat format. Checkpoints remain process-local and are never serialized.
 		const sanitized = sessions.map((session) => sessionSchema.parse(session));
 		const json = JSON.stringify({ version: 1, projectId, sessions: sanitized });
-		let fd: number | undefined;
-		try {
-			fd = openSync(temporary, "w");
-			writeFileSync(fd, json, "utf8");
-			fsyncSync(fd);
-			closeSync(fd);
-			fd = undefined;
-			renameSync(temporary, destination);
-		} finally {
-			if (fd !== undefined) closeSync(fd);
-			rmSync(temporary, { force: true });
-		}
+		await this.enqueue(projectId, async () => {
+			await fs.mkdir(this.projectsRoot, { recursive: true });
+			const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;
+			try {
+				const handle = await fs.open(temporary, "w");
+				try {
+					await handle.writeFile(json, "utf8");
+					await handle.sync();
+				} finally {
+					await handle.close();
+				}
+				await renameWithRetry(temporary, destination);
+			} finally {
+				await fs.rm(temporary, { force: true });
+			}
+		});
 	}
 
-	delete(projectId: string): void {
-		rmSync(this.fileFor(projectId), { force: true });
+	/** Queued behind the project's pending writes, so none of them can recreate the file. */
+	async delete(projectId: string): Promise<void> {
+		const file = this.fileFor(projectId);
+		await this.enqueue(projectId, () => fs.rm(file, { force: true }));
+	}
+
+	/** Settles once every write and delete queued so far has. */
+	async flush(): Promise<void> {
+		await Promise.all(this.queues.values());
+	}
+
+	// Same chain as DocumentService.writeProject: one queue per project, run on
+	// both settlements so a failed write does not cancel the next one.
+	private enqueue(projectId: string, task: () => Promise<void>): Promise<void> {
+		const run = (this.queues.get(projectId) ?? Promise.resolve()).then(task, task);
+		const settled = run.catch(() => undefined);
+		this.queues.set(projectId, settled);
+		void settled.then(() => {
+			if (this.queues.get(projectId) === settled) this.queues.delete(projectId);
+		});
+		return run;
 	}
 }

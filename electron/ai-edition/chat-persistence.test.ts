@@ -11,11 +11,16 @@ vi.mock("./deep-agent/chat-model", () => ({
 }));
 
 import {
+	AiEditionService,
+	type AiEditionServiceOptions,
+} from "../native-bridge/services/aiEditionService";
+import {
 	compactSessionNow,
 	configureChatPersistence,
 	createSession,
 	deleteProjectChat,
 	deleteSession,
+	flushChatPersistence,
 	listSessions,
 	renameSession,
 	rewindToMessage,
@@ -39,13 +44,14 @@ function config(): LlmConfigStore {
 	} as unknown as LlmConfigStore;
 }
 
-function restart() {
+async function restart() {
+	await flushChatPersistence();
 	configureChatPersistence(root);
 }
 
 beforeEach(() => {
 	root = mkdtempSync(path.join(tmpdir(), "openscreen-chat-"));
-	restart();
+	configureChatPersistence(root);
 	invokeMock.mockReset();
 	modelMock.mockReset();
 	invokeMock.mockImplementation(async (args) => ({
@@ -55,19 +61,20 @@ beforeEach(() => {
 	}));
 });
 
-afterEach(() => {
+afterEach(async () => {
+	await flushChatPersistence();
 	rmSync(root, { recursive: true, force: true });
 });
 
 describe("local Agent chat history", () => {
-	it("restores multiple sessions and persists rename and delete per project", () => {
+	it("restores multiple sessions and persists rename and delete per project", async () => {
 		const first = createSession("proj_a", "First");
 		const deleted = createSession("proj_a", "Deleted");
 		const other = createSession("proj_b", "Other");
 		renameSession("proj_a", first.id, "Renamed");
 		expect(deleteSession("proj_a", deleted.id)).toBe(true);
 
-		restart();
+		await restart();
 		expect(listSessions("proj_a")).toEqual([{ ...first, title: "Renamed" }]);
 		expect(selectSession("proj_a", deleted.id)).toBeNull();
 		expect(listSessions("proj_b")).toEqual([other]);
@@ -79,11 +86,12 @@ describe("local Agent chat history", () => {
 		const document = createEmptyDocument({ title: "Test", projectId: "proj_chat" });
 		await runChat("proj_chat", session.id, "first question", config(), document);
 		expect(selectSession("proj_chat", session.id)?.messages[0]?.checkpointId).toBeTruthy();
+		await flushChatPersistence();
 		const file = path.join(root, "proj_chat.chat.json");
 		expect(readFileSync(file, "utf8")).not.toContain(key);
 		expect(readFileSync(file, "utf8")).not.toContain("checkpointId");
 
-		restart();
+		await restart();
 		const restored = selectSession("proj_chat", session.id);
 		expect(restored?.messages.map((m) => m.content)).toEqual(["first question", "reply"]);
 		expect(restored?.messages[0]?.checkpointId).toBeNull();
@@ -111,7 +119,7 @@ describe("local Agent chat history", () => {
 		}
 		const compacted = await compactSessionNow("proj_compact", session.id, config());
 		expect(compacted?.summary).toBe("Earlier goals and decisions");
-		restart();
+		await restart();
 		expect(selectSession("proj_compact", session.id)?.messages).toHaveLength(8);
 		await runChat("proj_compact", session.id, "continue", config());
 		const history = invokeMock.mock.lastCall?.[0].history ?? [];
@@ -130,7 +138,7 @@ describe("local Agent chat history", () => {
 			JSON.stringify({ version: 1, projectId: "proj_other", sessions: [] }),
 		]) {
 			writeFileSync(file, bad);
-			restart();
+			await restart();
 			expect(listSessions(doc.project.id)).toEqual([]);
 			await expect(documents.getProject(doc.project.id)).resolves.toMatchObject({
 				project: { id: doc.project.id },
@@ -138,8 +146,9 @@ describe("local Agent chat history", () => {
 		}
 	});
 
-	it("does not trust a checkpoint id found in a saved transcript", () => {
+	it("does not trust a checkpoint id found in a saved transcript", async () => {
 		const session = createSession("proj_false_rewind");
+		await flushChatPersistence();
 		const file = path.join(root, "proj_false_rewind.chat.json");
 		const saved = JSON.parse(readFileSync(file, "utf8"));
 		saved.sessions[0].messages = [
@@ -152,28 +161,65 @@ describe("local Agent chat history", () => {
 			},
 		];
 		writeFileSync(file, JSON.stringify(saved));
-		restart();
+		await restart();
 		expect(selectSession("proj_false_rewind", session.id)?.messages[0]?.checkpointId).toBeNull();
 		expect(rewindToMessage("proj_false_rewind", session.id, "user_1").success).toBe(false);
 	});
 
-	it("skips a damaged session while retaining valid siblings", () => {
+	it("skips a damaged session while retaining valid siblings", async () => {
 		const good = createSession("proj_partial", "Good");
+		await flushChatPersistence();
 		const file = path.join(root, "proj_partial.chat.json");
 		const saved = JSON.parse(readFileSync(file, "utf8"));
 		saved.sessions.push({ id: "broken", projectId: "proj_partial", messages: "wrong" });
 		writeFileSync(file, JSON.stringify(saved));
-		restart();
+		await restart();
 		expect(listSessions("proj_partial")).toEqual([good]);
 	});
 
-	it("removes chat history when the owning project is deleted", () => {
+	it("removes chat history when the owning project is deleted", async () => {
 		createSession("proj_removed", "Disposable");
 		const file = path.join(root, "proj_removed.chat.json");
-		expect(existsSync(file)).toBe(true);
-		deleteProjectChat("proj_removed");
+		// Written off the event loop: nothing is on disk until the queue runs.
 		expect(existsSync(file)).toBe(false);
-		restart();
+		await flushChatPersistence();
+		expect(existsSync(file)).toBe(true);
+		renameSession("proj_removed", listSessions("proj_removed")[0]?.id ?? "", "Queued write");
+		// Queued behind that pending write, so the write cannot recreate the file.
+		await deleteProjectChat("proj_removed");
+		expect(existsSync(file)).toBe(false);
+		await restart();
 		expect(listSessions("proj_removed")).toEqual([]);
+	});
+
+	it("does not recreate the history of a project deleted while the agent replies", async () => {
+		const session = createSession("proj_mid_turn");
+		let reply: (value: Awaited<ReturnType<typeof invokeOpenScreenAgent>>) => void = () => undefined;
+		invokeMock.mockImplementation(() => new Promise((resolve) => (reply = resolve)));
+		const turn = runChat("proj_mid_turn", session.id, "question", config());
+		await vi.waitFor(() => expect(invokeMock).toHaveBeenCalled());
+		await deleteProjectChat("proj_mid_turn");
+		const document = createEmptyDocument({ title: "x", projectId: "proj_mid_turn" });
+		reply({ text: "late reply", document, mutated: false });
+
+		expect(await turn).toMatchObject({ success: false });
+		await restart();
+		expect(existsSync(path.join(root, "proj_mid_turn.chat.json"))).toBe(false);
+		expect(listSessions("proj_mid_turn")).toEqual([]);
+	});
+
+	it("reports a project deleted even when its chat history cannot be removed", async () => {
+		const documents = new DocumentService(root, root);
+		const doc = await documents.createProject("Doomed");
+		const service = new AiEditionService({
+			documents,
+			deleteChatHistory: async () => {
+				throw new Error("disk says no");
+			},
+		} as unknown as AiEditionServiceOptions);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		await expect(service.deleteProject(doc.project.id)).resolves.toEqual({ success: true });
+		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
 	});
 });

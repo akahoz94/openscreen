@@ -47,15 +47,28 @@ export function configureChatPersistence(projectsRoot: string): void {
 }
 
 function persistProject(projectId: string): void {
-	if (persistence) persistence.write(projectId, [...getProjectSessions(projectId).values()]);
+	const sessions = sessionsByProject.get(projectId);
+	// No cache entry means the project was deleted, possibly mid-turn: writing
+	// now would recreate the history its deletion just removed.
+	if (!persistence || !sessions) return;
+	// Off the event loop and best effort: the cache stays the source of truth
+	// while the app runs, and a chat file must never fail a chat turn.
+	persistence.write(projectId, [...sessions.values()]).catch((error) => {
+		console.warn(`[ai-edition] could not save chat history for ${projectId}:`, error);
+	});
 }
 
-export function deleteProjectChat(projectId: string): void {
-	persistence?.delete(projectId);
+export function deleteProjectChat(projectId: string): Promise<void> {
 	sessionsByProject.delete(projectId);
 	for (const key of messageCheckpointsBySession.keys()) {
 		if (key.startsWith(projectId + "::")) messageCheckpointsBySession.delete(key);
 	}
+	return persistence?.delete(projectId) ?? Promise.resolve();
+}
+
+/** Lets queued chat-history writes reach the disk before the app exits. */
+export function flushChatPersistence(): Promise<void> {
+	return persistence?.flush() ?? Promise.resolve();
 }
 
 // ponytail: per-message checkpoints, stored as an ordered list per session
@@ -446,6 +459,12 @@ export async function runChat(
 		editsAllowed,
 		cursor: env.cursor,
 	});
+
+	// The project was deleted while the agent ran: its sessions are gone, so a
+	// reply recorded now would be reported as sent and then never be seen again.
+	if (sessionsByProject.get(projectId) !== sessions) {
+		return { success: false, error: "The project was deleted while the agent was replying." };
+	}
 
 	if (!result.text) {
 		// ponytail: surface the deep-agent's diagnostic so the user can see

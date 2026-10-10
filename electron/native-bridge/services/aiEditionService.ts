@@ -36,7 +36,7 @@ import type { McpController } from "../../mcp/mcp-controller";
 
 export interface AiEditionServiceOptions {
 	documents: DocumentService;
-	deleteChatHistory?: (projectId: string) => void;
+	deleteChatHistory?: (projectId: string) => Promise<void>;
 	/**
 	 * A factory, not an instance: building `LlmConfigStore` does two sync
 	 * readFileSync plus a `safeStorage` decrypt, and on macOS that decrypt is
@@ -147,14 +147,20 @@ export class AiEditionService {
 	async deleteProject(projectId: string): Promise<AiEditionDocumentResult> {
 		try {
 			await this.options.documents.deleteProject(projectId);
-			this.options.deleteChatHistory?.(projectId);
-			return { success: true };
 		} catch (error) {
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
+		try {
+			await this.options.deleteChatHistory?.(projectId);
+		} catch (error) {
+			// The project is already gone: a chat file left behind is orphaned data,
+			// not a failed delete.
+			console.warn(`[ai-edition] could not remove chat history for ${projectId}:`, error);
+		}
+		return { success: true };
 	}
 
 	async addAsset(

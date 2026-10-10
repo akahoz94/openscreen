@@ -21,6 +21,7 @@ import {
 	PRODUCT_NAME,
 	usesNativeAboutPanel,
 } from "./about";
+import { flushChatPersistence } from "./ai-edition/chat-service";
 import { AppSettingsStore } from "./app-settings";
 import {
 	blockedFromInstalling,
@@ -1109,7 +1110,7 @@ app.on("activate", () => {
 	}
 });
 
-let sttShutdownPromise: Promise<void> | null = null;
+let sttShutdownPromise: Promise<unknown> | null = null;
 let sttShutdownFinished = false;
 
 // Electron does not wait for an async event listener. Hold the first quit long
@@ -1126,14 +1127,16 @@ app.on("before-quit", (event) => {
 	if (sttShutdownFinished) return;
 	event.preventDefault();
 	if (sttShutdownPromise) return;
-	sttShutdownPromise = shutdownStt()
-		.catch((error) => {
+	sttShutdownPromise = Promise.all([
+		shutdownStt().catch((error) => {
 			console.error("[stt] Failed to stop whisper helper during app quit:", error);
-		})
-		.finally(() => {
-			sttShutdownFinished = true;
-			app.quit();
-		});
+		}),
+		// Chat history is written asynchronously; let a reply that just landed reach the disk.
+		flushChatPersistence(),
+	]).finally(() => {
+		sttShutdownFinished = true;
+		app.quit();
+	});
 });
 
 app.on("will-quit", () => {

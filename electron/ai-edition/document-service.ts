@@ -138,7 +138,7 @@ function parseLoadedDocument(raw: string): AxcutDocument {
  * than surface a save error the user cannot act on. POSIX renames don't hit this
  * and take the first attempt.
  */
-async function renameWithRetry(from: string, to: string): Promise<void> {
+export async function renameWithRetry(from: string, to: string): Promise<void> {
 	const RETRYABLE = new Set(["EPERM", "EACCES", "EBUSY"]);
 	for (let attempt = 0; ; attempt++) {
 		try {
