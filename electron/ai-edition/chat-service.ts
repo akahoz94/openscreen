@@ -58,12 +58,17 @@ function persistProject(projectId: string): void {
 	});
 }
 
+/** Projects whose sidecar removal is still queued: their file holds deleted sessions. */
+const deletingProjects = new Set<string>();
+
 export function deleteProjectChat(projectId: string): Promise<void> {
 	sessionsByProject.delete(projectId);
 	for (const key of messageCheckpointsBySession.keys()) {
 		if (key.startsWith(projectId + "::")) messageCheckpointsBySession.delete(key);
 	}
-	return persistence?.delete(projectId) ?? Promise.resolve();
+	if (!persistence) return Promise.resolve();
+	deletingProjects.add(projectId);
+	return persistence.delete(projectId).finally(() => deletingProjects.delete(projectId));
 }
 
 /** Lets queued chat-history writes reach the disk before the app exits. */
@@ -215,7 +220,8 @@ function toSummary(s: ChatSession): ChatSessionSummary {
 function getProjectSessions(projectId: string): Map<string, ChatSession> {
 	let m = sessionsByProject.get(projectId);
 	if (!m) {
-		m = new Map(persistence?.read(projectId).map((session) => [session.id, session]) ?? []);
+		const stored = deletingProjects.has(projectId) ? [] : (persistence?.read(projectId) ?? []);
+		m = new Map(stored.map((session) => [session.id, session]));
 		sessionsByProject.set(projectId, m);
 	}
 	return m;

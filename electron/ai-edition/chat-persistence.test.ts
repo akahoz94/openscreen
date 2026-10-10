@@ -186,7 +186,10 @@ describe("local Agent chat history", () => {
 		expect(existsSync(file)).toBe(true);
 		renameSession("proj_removed", listSessions("proj_removed")[0]?.id ?? "", "Queued write");
 		// Queued behind that pending write, so the write cannot recreate the file.
-		await deleteProjectChat("proj_removed");
+		const deleting = deleteProjectChat("proj_removed");
+		// The file still holds the deleted session until the queue reaches the delete.
+		expect(listSessions("proj_removed")).toEqual([]);
+		await deleting;
 		expect(existsSync(file)).toBe(false);
 		await restart();
 		expect(listSessions("proj_removed")).toEqual([]);
