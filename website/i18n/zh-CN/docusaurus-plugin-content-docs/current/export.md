@@ -54,4 +54,4 @@ MP4 和 GIF 导出在 Windows、macOS 和 Linux 上均可使用。不同的是 L
 
 ## 导出文件与项目文件 {#exported-file-vs-project-file}
 
-导出会生成一个已经完成、图层已合并的视频（或 GIF），之后无法再编辑。如果以后还想继续编辑，请保存一个 `.openscreen` **项目**（参见[编辑与时间轴](./editing-timeline.md#saving-your-work)）；项目文件会完整保留每个片段、缩放、剪辑区间、标注和设置。
+导出会生成一个已经完成、图层已合并的视频（或 GIF），之后无法再编辑。如果以后还想继续编辑，请保存一个 `.openscreen` **项目**（参见[编辑与时间轴](./editing-timeline.md#saving-your-work)）；项目文件会完整保留每个片段、缩放、删减区间、标注和设置。
